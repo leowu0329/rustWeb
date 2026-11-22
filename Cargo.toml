@@ -10,3 +10,7 @@ dotenvy = "0.15.7"
 serde = { version = "1.0.229", features = ["derive"] }
 sqlx = { version = "0.9.1", features = ["runtime-tokio", "sqlite"] }
 tokio = { version = "1.54.1", features = ["full"] }
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+tower = { version = "0.5.3", features = ["util"] }
