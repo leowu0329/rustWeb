@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}歡迎 {{ name }} - Rust Web{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-4 p-4 p-md-5 text-center">
+            <div class="text-success mb-3">
+                <i class="fa-solid fa-circle-check fa-4x"></i>
+            </div>
+            <!-- Askama 會自動對 {{ name }} 進行 HTML 安全跳脫 -->
+            <h2 class="h3 fw-bold mb-3">你好，{{ name }}！</h2>
+            <p class="text-muted mb-4">歡迎光臨，這是由 Askama 模板引擎安全渲染的頁面。</p>
+            <div>
+                <a href="/" class="btn btn-outline-primary px-4">
+                    <i class="fa-solid fa-arrow-left me-2"></i>重新輸入名字
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

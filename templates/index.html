@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}首頁 - Rust + Askama 網站{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow-sm border-0 rounded-4">
+            <div class="card-body p-4 p-md-5 text-center">
+                <div class="mb-3 text-primary">
+                    <i class="fa-solid fa-rocket fa-3x"></i>
+                </div>
+                <h1 class="h3 fw-bold mb-2">歡迎來到 Rust 網站伺服器</h1>
+                <p class="text-muted mb-4">
+                    已導入 <strong>Askama</strong> 模板引擎與 <span class="badge bg-dark">Roboto + Noto Sans TC</span> 字體
+                </p>
+
+                <form id="greetForm" class="mx-auto" style="max-width: 400px;">
+                    <div class="input-group input-group-lg shadow-sm">
+                        <span class="input-group-text bg-white text-muted">
+                            <i class="fa-solid fa-user"></i>
+                        </span>
+                        <input 
+                            type="text" 
+                            id="userNameInput" 
+                            class="form-control" 
+                            placeholder="請輸入您的名字 (如: Ryowu 2026)..." 
+                            required 
+                            autofocus
+                        >
+                        <button type="submit" class="btn btn-primary px-4">
+                            送出 <i class="fa-solid fa-arrow-right ms-1"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('greetForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const inputVal = document.getElementById('userNameInput').value.trim();
+        if (inputVal) {
+            window.location.href = '/hello/' + encodeURIComponent(inputVal);
+        }
+    });
+</script>
+{% endblock %}
