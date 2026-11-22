@@ -14,3 +14,10 @@ tokio = { version = "1.54.1", features = ["full"] }
 [dev-dependencies]
 http-body-util = "0.1.5"
 tower = { version = "0.5.3", features = ["util"] }
+
+[profile.release]
+opt-level = 3       # 最高等級效能最佳化
+lto = true          # 啟用跨套件連結時期最佳化 (Link Time Optimization)
+codegen-units = 1   # 單一程式碼生成單元，最大化編譯器最佳化空間
+strip = true        # 自動剝除除錯符號，大幅減小最終 .exe 檔案體積
+
