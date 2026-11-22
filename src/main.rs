@@ -19,7 +19,7 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-// 首頁：整合 Bootstrap 5 卡片排版與 Font Awesome 圖示
+// 首頁：加入 Bootstrap 表單輸入框與自動跳轉腳本
 async fn home_page() -> Html<&'static str> {
     Html(
         r#"
@@ -29,11 +29,8 @@ async fn home_page() -> Html<&'static str> {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Rust + Bootstrap 網站</title>
-            <!-- Google Fonts (Noto Sans TC) -->
             <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-            <!-- Bootstrap 5.3 CSS -->
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-            <!-- Font Awesome 6 圖示庫 -->
             <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
             <style>
                 body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8f9fa; }
@@ -58,25 +55,50 @@ async fn home_page() -> Html<&'static str> {
                                 <div class="mb-3 text-primary">
                                     <i class="fa-solid fa-rocket fa-3x"></i>
                                 </div>
-                                <h1 class="h3 fw-bold mb-3">歡迎來到 Rust 網站伺服器</h1>
+                                <h1 class="h3 fw-bold mb-2">歡迎來到 Rust 網站伺服器</h1>
                                 <p class="text-muted mb-4">
-                                    本頁面由 <strong>Rust + Axum</strong> 後端驅動，並已成功整合
-                                    <span class="badge bg-primary">Bootstrap 5</span> 與
-                                    <span class="badge bg-secondary">Font Awesome</span>。
+                                    請在下方輸入你的名字，體驗動態路由跳轉效果
                                 </p>
-                                
-                                <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
-                                    <a href="/hello/Rust開發者" class="btn btn-primary btn-lg px-4">
-                                        <i class="fa-solid fa-user-astronaut me-2"></i>測試動態路由
-                                    </a>
-                                </div>
+
+                                <!-- Bootstrap 表單輸入框 -->
+                                <form id="greetForm" class="mx-auto" style="max-width: 400px;">
+                                    <div class="input-group input-group-lg shadow-sm">
+                                        <span class="input-group-text bg-white text-muted">
+                                            <i class="fa-solid fa-user"></i>
+                                        </span>
+                                        <input 
+                                            type="text" 
+                                            id="userNameInput" 
+                                            class="form-control" 
+                                            placeholder="請輸入您的名字..." 
+                                            required 
+                                            autofocus
+                                        >
+                                        <button type="submit" class="btn btn-primary px-4">
+                                            送出 <i class="fa-solid fa-arrow-right ms-1"></i>
+                                        </button>
+                                    </div>
+                                </form>
+
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Bootstrap 5.3 JS Bundle (支援下拉選單、Modal 等互動元件) -->
+            <!-- 處理表單送出並跳轉至 /hello/{name} -->
+            <script>
+                document.getElementById('greetForm').addEventListener('submit', function(event) {
+                    // 阻止表單預設的重新整理行為
+                    event.preventDefault();
+                    
+                    const inputVal = document.getElementById('userNameInput').value.trim();
+                    if (inputVal) {
+                        // 使用 encodeURIComponent 確保中文與特殊符號能安全放入網址路徑
+                        window.location.href = '/hello/' + encodeURIComponent(inputVal);
+                    }
+                });
+            </script>
             <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
         </body>
         </html>
@@ -84,7 +106,7 @@ async fn home_page() -> Html<&'static str> {
     )
 }
 
-// 動態歡迎頁：同樣套用 Bootstrap 與 Font Awesome 樣式
+// 動態歡迎頁：渲染個人化歡迎畫面
 async fn greet_user(Path(name): Path<String>) -> Html<String> {
     let html = format!(
         r#"
@@ -102,16 +124,28 @@ async fn greet_user(Path(name): Path<String>) -> Html<String> {
             </style>
         </head>
         <body>
+            <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+                <div class="container">
+                    <a class="navbar-brand fw-bold" href="/">
+                        <i class="fa-brands fa-rust text-warning me-2"></i>Rust Web
+                    </a>
+                </div>
+            </nav>
+
             <div class="container py-5">
                 <div class="row justify-content-center">
                     <div class="col-md-6">
-                        <div class="alert alert-success shadow-sm rounded-4 p-4 text-center" role="alert">
-                            <i class="fa-solid fa-circle-check fa-3x mb-3"></i>
-                            <h2 class="h4 fw-bold">你好，{name}！</h2>
-                            <p class="mb-4">這是透過 Rust 動態路徑參數渲染的 Bootstrap 頁面。</p>
-                            <a href="/" class="btn btn-outline-success">
-                                <i class="fa-solid fa-arrow-left me-2"></i>返回首頁
-                            </a>
+                        <div class="card border-0 shadow-sm rounded-4 p-4 p-md-5 text-center">
+                            <div class="text-success mb-3">
+                                <i class="fa-solid fa-circle-check fa-4x"></i>
+                            </div>
+                            <h2 class="h3 fw-bold mb-3">你好，{name}！</h2>
+                            <p class="text-muted mb-4">歡迎光臨，這是專屬於你的 Rust 動態歡迎頁面。</p>
+                            <div>
+                                <a href="/" class="btn btn-outline-primary px-4">
+                                    <i class="fa-solid fa-arrow-left me-2"></i>重新輸入名字
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
