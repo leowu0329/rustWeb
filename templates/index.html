@@ -1,12 +1,12 @@
-   {% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}Rust + SQLite 留言板{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-8 col-lg-7">
+    <div class="col-md-9 col-lg-7">
         
-        <!-- 上半部：新增留言表單 -->
+        <!-- 1. 新增留言表單 -->
         <div class="card shadow-sm border-0 rounded-4 mb-4">
             <div class="card-body p-4">
                 <h1 class="h4 fw-bold mb-3">
@@ -34,18 +34,54 @@
             </div>
         </div>
 
-        <!-- 下半部：留言列表展示 -->
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="h5 fw-bold mb-0">
-                <i class="fa-solid fa-comments text-secondary me-2"></i>最新留言列表
-            </h2>
-            <span class="badge bg-secondary rounded-pill">共 {{ messages.len() }} 則</span>
+        <!-- 2. 關鍵字搜尋列 -->
+        <div class="card shadow-sm border-0 rounded-4 mb-3 bg-white">
+            <div class="card-body p-3">
+                <form action="/" method="GET" class="d-flex gap-2">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0">
+                            <i class="fa-solid fa-magnifying-glass text-muted"></i>
+                        </span>
+                        <input 
+                            type="text" 
+                            name="q" 
+                            class="form-control border-start-0" 
+                            placeholder="搜尋暱稱或留言關鍵字..." 
+                            value="{{ query }}"
+                        >
+                        {% if !query.is_empty() %}
+                        <a href="/" class="btn btn-outline-secondary" title="清除搜尋">
+                            <i class="fa-solid fa-xmark"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                    <button type="submit" class="btn btn-dark px-4 text-nowrap">搜尋</button>
+                </form>
+            </div>
         </div>
 
+        <!-- 3. 列表標題與總筆數 -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 fw-bold mb-0">
+                <i class="fa-solid fa-comments text-secondary me-2"></i>
+                {% if query.is_empty() %}
+                    最新留言列表
+                {% else %}
+                    「<span class="text-primary">{{ query }}</span>」的搜尋結果
+                {% endif %}
+            </h2>
+            <span class="badge bg-secondary rounded-pill">共 {{ total_count }} 則</span>
+        </div>
+
+        <!-- 4. 留言卡片清單 -->
         {% if messages.is_empty() %}
             <div class="alert alert-light border text-center text-muted py-4 rounded-4">
                 <i class="fa-regular fa-face-smile fa-2x mb-2 d-block"></i>
-                目前還沒有任何留言，快來搶頭香吧！
+                {% if query.is_empty() %}
+                    目前還沒有任何留言，快來搶頭香吧！
+                {% else %}
+                    找不到符合「{{ query }}」的留言紀錄。
+                {% endif %}
             </div>
         {% else %}
             {% for msg in messages %}
@@ -55,11 +91,26 @@
                         <span class="fw-bold text-primary">
                             <i class="fa-solid fa-circle-user me-1"></i>{{ msg.author }}
                         </span>
-                        <div class="d-flex align-items-center gap-2">
-                            <small class="text-muted">
+                        <div class="d-flex align-items-center gap-1">
+                            <small class="text-muted me-2">
                                 <i class="fa-regular fa-clock me-1"></i>{{ msg.created_at }}
                             </small>
-                            <!-- 刪除留言按鈕（使用到 msg.id） -->
+                            
+                            <!-- 編輯按鈕（透過 data-* 屬性傳遞資料給 Bootstrap Modal） -->
+                            <button 
+                                type="button" 
+                                class="btn btn-sm btn-outline-secondary border-0" 
+                                title="編輯留言"
+                                data-bs-toggle="modal" 
+                                data-bs-target="#editMessageModal"
+                                data-id="{{ msg.id }}"
+                                data-author="{{ msg.author }}"
+                                data-content="{{ msg.content }}"
+                            >
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+
+                            <!-- 刪除按鈕 -->
                             <form action="/messages/{{ msg.id }}/delete" method="POST" class="m-0">
                                 <button type="submit" class="btn btn-sm btn-outline-danger border-0" title="刪除留言">
                                     <i class="fa-solid fa-trash-can"></i>
@@ -71,8 +122,87 @@
                 </div>
             </div>
             {% endfor %}
+
+            <!-- 5. 分頁導覽列（自動保留搜尋參數 q） -->
+            {% if total_pages > 1 %}
+            <nav aria-label="留言分頁導覽" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    <!-- 上一頁 -->
+                    <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
+                        <a class="page-link" href="/?page={{ current_page - 1 }}{% if !query.is_empty() %}&q={{ query }}{% endif %}">
+                            <i class="fa-solid fa-chevron-left"></i> 上一頁
+                        </a>
+                    </li>
+
+                    <!-- 頁碼資訊 -->
+                    <li class="page-item disabled">
+                        <span class="page-link text-dark fw-medium">
+                            第 {{ current_page }} / {{ total_pages }} 頁
+                        </span>
+                    </li>
+
+                    <!-- 下一頁 -->
+                    <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
+                        <a class="page-link" href="/?page={{ current_page + 1 }}{% if !query.is_empty() %}&q={{ query }}{% endif %}">
+                            下一頁 <i class="fa-solid fa-chevron-right"></i>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+            {% endif %}
         {% endif %}
 
     </div>
 </div>
-{% endblock %}     
+
+<!-- Bootstrap 5 編輯留言彈出視窗 (Modal) -->
+<div class="modal fade" id="editMessageModal" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow rounded-4">
+            <form id="editMessageForm" method="POST">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="editModalLabel">
+                        <i class="fa-solid fa-pen-to-square text-primary me-2"></i>編輯修改留言
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="關閉"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="editAuthor" class="form-label fw-medium">暱稱</label>
+                        <input type="text" class="form-control" id="editAuthor" name="author" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editContent" class="form-label fw-medium">留言內容</label>
+                        <textarea class="form-control" id="editContent" name="content" rows="4" required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-top-0 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary px-4">
+                        <i class="fa-solid fa-check me-1"></i>儲存變更
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 監聽編輯 Modal 開啟事件，將對應卡片的資料填入表單並設定 action 路徑
+    const editModal = document.getElementById('editMessageModal');
+    if (editModal) {
+        editModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const id = button.getAttribute('data-id');
+            const author = button.getAttribute('data-author');
+            const content = button.getAttribute('data-content');
+
+            document.getElementById('editMessageForm').action = `/messages/${id}/edit`;
+            document.getElementById('editAuthor').value = author;
+            document.getElementById('editContent').value = content;
+        });
+    }
+</script>
+{% endblock %}

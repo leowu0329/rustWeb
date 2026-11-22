@@ -6,7 +6,6 @@ use axum::{
 use serde::Deserialize;
 use sqlx::FromRow;
 
-// 資料庫資料表對應結構（欄位需加 pub 讓模板與其他模組讀取）
 #[derive(FromRow)]
 pub struct Message {
     pub id: i64,
@@ -15,21 +14,38 @@ pub struct Message {
     pub created_at: String,
 }
 
-// 前端表單送出結構
+// 新增留言表單
 #[derive(Deserialize)]
 pub struct CreateMessageForm {
     pub author: String,
     pub content: String,
 }
 
-// Askama 首頁模板結構
+// 編輯留言表單
+#[derive(Deserialize)]
+pub struct UpdateMessageForm {
+    pub author: String,
+    pub content: String,
+}
+
+// 首頁網址查詢參數（例如 /?q=Rust&page=2）
+#[derive(Deserialize, Default)]
+pub struct SearchQuery {
+    pub q: Option<String>,
+    pub page: Option<i64>,
+}
+
+// Askama 首頁模板結構（包含分頁與搜尋狀態）
 #[derive(Template)]
 #[template(path = "index.html")]
 pub struct IndexTemplate {
     pub messages: Vec<Message>,
+    pub query: String,
+    pub current_page: i64,
+    pub total_pages: i64,
+    pub total_count: i64,
 }
 
-// 通用 Askama HTML 回應包裝器
 pub struct HtmlTemplate<T>(pub T);
 
 impl<T: Template> IntoResponse for HtmlTemplate<T> {

@@ -1,21 +1,70 @@
 use crate::models::message::Message;
 use sqlx::SqlitePool;
 
-// 查詢所有留言（依 ID 降冪排序，最新在最前）
-pub async fn get_all_messages(pool: &SqlitePool) -> Vec<Message> {
-    sqlx::query_as::<_, Message>(
-        "SELECT id, author, content, created_at FROM messages ORDER BY id DESC",
-    )
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default()
+// 查詢符合關鍵字條件的總筆數（用於計算總頁數）
+pub async fn count_messages(pool: &SqlitePool, keyword: &str) -> i64 {
+    if keyword.is_empty() {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM messages")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0)
+    } else {
+        let pattern = format!("%{}%", keyword);
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM messages WHERE author LIKE ?1 OR content LIKE ?1",
+        )
+        .bind(&pattern)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0)
+    }
 }
 
-// 新增一筆留言
+// 依關鍵字與分頁參數查詢留言列表
+pub async fn get_messages_paginated(
+    pool: &SqlitePool,
+    keyword: &str,
+    limit: i64,
+    offset: i64,
+) -> Vec<Message> {
+    if keyword.is_empty() {
+        sqlx::query_as::<_, Message>(
+            "SELECT id, author, content, created_at FROM messages ORDER BY id DESC LIMIT ?1 OFFSET ?2",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+    } else {
+        let pattern = format!("%{}%", keyword);
+        sqlx::query_as::<_, Message>(
+            "SELECT id, author, content, created_at FROM messages WHERE author LIKE ?1 OR content LIKE ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3",
+        )
+        .bind(&pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+    }
+}
+
+// 新增留言
 pub async fn create_message(pool: &SqlitePool, author: &str, content: &str) {
     let _ = sqlx::query("INSERT INTO messages (author, content) VALUES (?1, ?2)")
         .bind(author)
         .bind(content)
+        .execute(pool)
+        .await;
+}
+
+// 編輯更新指定 ID 的留言
+pub async fn update_message_by_id(pool: &SqlitePool, id: i64, author: &str, content: &str) {
+    let _ = sqlx::query("UPDATE messages SET author = ?1, content = ?2 WHERE id = ?3")
+        .bind(author)
+        .bind(content)
+        .bind(id)
         .execute(pool)
         .await;
 }
@@ -28,41 +77,40 @@ pub async fn delete_message_by_id(pool: &SqlitePool, id: i64) {
         .await;
 }
 
-// ==========================================
-// 自動化單元測試區塊（僅在執行 cargo test 時編譯）
-// ==========================================
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::init_db;
 
     #[tokio::test]
-    async fn test_message_crud_lifecycle() {
-        // 1. 建立記憶體內獨立測試資料庫，確保與正式資料完全隔離
+    async fn test_message_crud_search_and_pagination() {
         let pool = init_db("sqlite::memory:").await;
 
-        // 2. 驗證初始狀態應為空列表
-        let initial_messages = get_all_messages(&pool).await;
-        assert!(initial_messages.is_empty(), "新資料庫的留言列表應該為空");
+        assert_eq!(count_messages(&pool, "").await, 0);
 
-        // 3. 測試新增兩筆留言
-        create_message(&pool, "Ryowu", "第一則測試留言").await;
-        create_message(&pool, "Rustacean", "第二則測試留言").await;
+        // 1. 新增 3 筆資料測試分頁與搜尋
+        create_message(&pool, "Ryowu", "Rust 後端開發筆記").await;
+        create_message(&pool, "Alice", "前端 Bootstrap 樣式調整").await;
+        create_message(&pool, "Bob", "Rust 非同步 SQLx 測試").await;
 
-        let messages = get_all_messages(&pool).await;
-        assert_eq!(messages.len(), 2, "應該要成功寫入 2 則留言");
+        assert_eq!(count_messages(&pool, "").await, 3);
+        assert_eq!(count_messages(&pool, "Rust").await, 2);
 
-        // 4. 驗證排序邏輯（ORDER BY id DESC，最新留言應在索引 0）
-        assert_eq!(messages[0].author, "Rustacean");
-        assert_eq!(messages[0].content, "第二則測試留言");
-        assert_eq!(messages[1].author, "Ryowu");
+        // 2. 測試分頁（每頁 2 筆，第 1 頁應為 Bob 與 Alice）
+        let page1 = get_messages_paginated(&pool, "", 2, 0).await;
+        assert_eq!(page1.len(), 2);
+        assert_eq!(page1[0].author, "Bob");
 
-        // 5. 測試刪除指定 ID 的留言
-        let target_id = messages[0].id;
+        // 3. 測試編輯修改留言
+        let target_id = page1[0].id;
+        update_message_by_id(&pool, target_id, "Bob_Edited", "更新後的內容").await;
+
+        let updated = get_messages_paginated(&pool, "Bob_Edited", 10, 0).await;
+        assert_eq!(updated.len(), 1);
+        assert_eq!(updated[0].content, "更新後的內容");
+
+        // 4. 測試刪除留言
         delete_message_by_id(&pool, target_id).await;
-
-        let remaining = get_all_messages(&pool).await;
-        assert_eq!(remaining.len(), 1, "刪除後應該只剩 1 則留言");
-        assert_eq!(remaining[0].author, "Ryowu");
+        assert_eq!(count_messages(&pool, "").await, 2);
     }
 }
