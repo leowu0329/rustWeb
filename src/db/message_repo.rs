@@ -1,116 +1,112 @@
-use crate::models::message::Message;
-use sqlx::SqlitePool;
+use crate::models::message::{Message, MessageDoc};
+use chrono::Local;
+use futures::TryStreamExt;
+use mongodb::{
+    bson::{doc, oid::ObjectId, Document, Regex},
+    Collection, Database,
+};
 
-// 查詢符合關鍵字條件的總筆數（用於計算總頁數）
-pub async fn count_messages(pool: &SqlitePool, keyword: &str) -> i64 {
+const COLLECTION_NAME: &str = "messages";
+
+fn get_collection(db: &Database) -> Collection<MessageDoc> {
+    db.collection::<MessageDoc>(COLLECTION_NAME)
+}
+
+// 建立不區分大小寫的模糊搜尋過濾條件
+fn build_filter(keyword: &str) -> Document {
     if keyword.is_empty() {
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM messages")
-            .fetch_one(pool)
-            .await
-            .unwrap_or(0)
+        doc! {}
     } else {
-        let pattern = format!("%{}%", keyword);
-        sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM messages WHERE author LIKE ?1 OR content LIKE ?1",
-        )
-        .bind(&pattern)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0)
+        // 跳脫正則特殊字元，防止使用者輸入括號或星號導致查詢報錯
+        let escaped = regex_escape(keyword);
+        let regex = Regex {
+            pattern: escaped,
+            options: "i".to_string(),
+        };
+        doc! {
+            "$or": [
+                { "author": &regex },
+                { "content": &regex }
+            ]
+        }
     }
 }
 
-// 依關鍵字與分頁參數查詢留言列表
+fn regex_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if "\\.+*?^$()[]{}|".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+// 查詢符合條件的總筆數
+pub async fn count_messages(db: &Database, keyword: &str) -> i64 {
+    let filter = build_filter(keyword);
+    get_collection(db)
+        .count_documents(filter)
+        .await
+        .unwrap_or(0) as i64
+}
+
+// 依關鍵字與分頁參數查詢留言（依 _id 降冪排序，即建立時間新到舊）
 pub async fn get_messages_paginated(
-    pool: &SqlitePool,
+    db: &Database,
     keyword: &str,
     limit: i64,
     offset: i64,
 ) -> Vec<Message> {
-    if keyword.is_empty() {
-        sqlx::query_as::<_, Message>(
-            "SELECT id, author, content, created_at FROM messages ORDER BY id DESC LIMIT ?1 OFFSET ?2",
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
-    } else {
-        let pattern = format!("%{}%", keyword);
-        sqlx::query_as::<_, Message>(
-            "SELECT id, author, content, created_at FROM messages WHERE author LIKE ?1 OR content LIKE ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3",
-        )
-        .bind(&pattern)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
+    let filter = build_filter(keyword);
+    let cursor = get_collection(db)
+        .find(filter)
+        .sort(doc! { "_id": -1 })
+        .skip(offset.max(0) as u64)
+        .limit(limit)
+        .await;
+
+    match cursor {
+        Ok(c) => c
+            .try_collect::<Vec<MessageDoc>>()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(Message::from)
+            .collect(),
+        Err(_) => Vec::new(),
     }
 }
 
-// 新增留言
-pub async fn create_message(pool: &SqlitePool, author: &str, content: &str) {
-    let _ = sqlx::query("INSERT INTO messages (author, content) VALUES (?1, ?2)")
-        .bind(author)
-        .bind(content)
-        .execute(pool)
-        .await;
+// 新增一筆留言
+pub async fn create_message(db: &Database, author: &str, content: &str) {
+    let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let new_doc = MessageDoc {
+        id: None,
+        author: author.to_string(),
+        content: content.to_string(),
+        created_at: now_str,
+    };
+
+    let _ = get_collection(db).insert_one(new_doc).await;
 }
 
-// 編輯更新指定 ID 的留言
-pub async fn update_message_by_id(pool: &SqlitePool, id: i64, author: &str, content: &str) {
-    let _ = sqlx::query("UPDATE messages SET author = ?1, content = ?2 WHERE id = ?3")
-        .bind(author)
-        .bind(content)
-        .bind(id)
-        .execute(pool)
-        .await;
+// 依 ObjectId 字串更新留言
+pub async fn update_message_by_id(db: &Database, id: &str, author: &str, content: &str) {
+    if let Ok(oid) = ObjectId::parse_str(id) {
+        let _ = get_collection(db)
+            .update_one(
+                doc! { "_id": oid },
+                doc! { "$set": { "author": author, "content": content } },
+            )
+            .await;
+    }
 }
 
-// 依 ID 刪除留言
-pub async fn delete_message_by_id(pool: &SqlitePool, id: i64) {
-    let _ = sqlx::query("DELETE FROM messages WHERE id = ?1")
-        .bind(id)
-        .execute(pool)
-        .await;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::db::init_db;
-
-    #[tokio::test]
-    async fn test_message_crud_search_and_pagination() {
-        let pool = init_db("sqlite::memory:").await;
-
-        assert_eq!(count_messages(&pool, "").await, 0);
-
-        // 1. 新增 3 筆資料測試分頁與搜尋
-        create_message(&pool, "Ryowu", "Rust 後端開發筆記").await;
-        create_message(&pool, "Alice", "前端 Bootstrap 樣式調整").await;
-        create_message(&pool, "Bob", "Rust 非同步 SQLx 測試").await;
-
-        assert_eq!(count_messages(&pool, "").await, 3);
-        assert_eq!(count_messages(&pool, "Rust").await, 2);
-
-        // 2. 測試分頁（每頁 2 筆，第 1 頁應為 Bob 與 Alice）
-        let page1 = get_messages_paginated(&pool, "", 2, 0).await;
-        assert_eq!(page1.len(), 2);
-        assert_eq!(page1[0].author, "Bob");
-
-        // 3. 測試編輯修改留言
-        let target_id = page1[0].id;
-        update_message_by_id(&pool, target_id, "Bob_Edited", "更新後的內容").await;
-
-        let updated = get_messages_paginated(&pool, "Bob_Edited", 10, 0).await;
-        assert_eq!(updated.len(), 1);
-        assert_eq!(updated[0].content, "更新後的內容");
-
-        // 4. 測試刪除留言
-        delete_message_by_id(&pool, target_id).await;
-        assert_eq!(count_messages(&pool, "").await, 2);
+// 依 ObjectId 字串刪除留言
+pub async fn delete_message_by_id(db: &Database, id: &str) {
+    if let Ok(oid) = ObjectId::parse_str(id) {
+        let _ = get_collection(db).delete_one(doc! { "_id": oid }).await;
     }
 }

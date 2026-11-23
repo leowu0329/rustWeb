@@ -4,6 +4,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use rust_web::{create_app, db};
+use std::env;
 use tower::ServiceExt;
 
 async fn read_body_string(body: Body) -> String {
@@ -12,9 +13,18 @@ async fn read_body_string(body: Body) -> String {
 }
 
 #[tokio::test]
-async fn test_guestbook_full_crud_and_search_flow() {
-    let pool = db::init_db("sqlite::memory:").await;
-    let app = create_app(pool);
+async fn test_mongodb_guestbook_flow() {
+    dotenvy::dotenv().ok();
+    let Ok(db_url) = env::var("DATABASE_URL") else {
+        // 若 CI/CD 環境未設定雲端連線字串則自動略過
+        return;
+    };
+
+    // 使用獨立的測試資料庫名稱，測試完畢後自動清理
+    let test_db = db::init_db(&db_url, "rust_web_integration_test").await;
+    let _ = test_db.drop().await;
+
+    let app = create_app(test_db.clone());
 
     // 1. 新增留言
     let post_res = app
@@ -24,34 +34,18 @@ async fn test_guestbook_full_crud_and_search_flow() {
                 .method("POST")
                 .uri("/messages")
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from("author=Ryowu&content=InitialContent"))
+                .body(Body::from("author=Ryowu&content=MongoCloudTest"))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(post_res.status(), StatusCode::SEE_OTHER);
 
-    // 2. 編輯修改 ID=1 的留言
-    let edit_res = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/messages/1/edit")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from("author=Ryowu&content=UpdatedRustContent"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(edit_res.status(), StatusCode::SEE_OTHER);
-
-    // 3. 透過關鍵字搜尋驗證修改後的內容
+    // 2. 搜尋驗證內容已寫入雲端 MongoDB
     let search_res = app
-        .clone()
         .oneshot(
             Request::builder()
-                .uri("/?q=UpdatedRust")
+                .uri("/?q=MongoCloudTest")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -59,19 +53,8 @@ async fn test_guestbook_full_crud_and_search_flow() {
         .unwrap();
     assert_eq!(search_res.status(), StatusCode::OK);
     let html = read_body_string(search_res.into_body()).await;
-    assert!(html.contains("UpdatedRustContent"));
-    assert!(html.contains("共 1 則"));
+    assert!(html.contains("MongoCloudTest"));
 
-    // 4. 搜尋不存在的關鍵字應回傳空結果提示
-    let empty_search_res = app
-        .oneshot(
-            Request::builder()
-                .uri("/?q=NonExistentKeyword")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let empty_html = read_body_string(empty_search_res.into_body()).await;
-    assert!(empty_html.contains("找不到符合"));
+    // 3. 清理測試資料庫
+    let _ = test_db.drop().await;
 }

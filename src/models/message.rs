@@ -3,39 +3,56 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
-use serde::Deserialize;
-use sqlx::FromRow;
+use mongodb::bson::oid::ObjectId;
+use serde::{Deserialize, Serialize};
 
-#[derive(FromRow)]
-pub struct Message {
-    pub id: i64,
+// 1. 對應 MongoDB Collection 儲存的文件結構
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MessageDoc {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
     pub author: String,
     pub content: String,
     pub created_at: String,
 }
 
-// 新增留言表單
+// 2. 傳遞給 Askama 前端模板的視圖模型（保持欄位名稱與原本完全一致）
+pub struct Message {
+    pub id: String,
+    pub author: String,
+    pub content: String,
+    pub created_at: String,
+}
+
+impl From<MessageDoc> for Message {
+    fn from(doc: MessageDoc) -> Self {
+        Self {
+            id: doc.id.map(|oid| oid.to_hex()).unwrap_or_default(),
+            author: doc.author,
+            content: doc.content,
+            created_at: doc.created_at,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct CreateMessageForm {
     pub author: String,
     pub content: String,
 }
 
-// 編輯留言表單
 #[derive(Deserialize)]
 pub struct UpdateMessageForm {
     pub author: String,
     pub content: String,
 }
 
-// 首頁網址查詢參數（例如 /?q=Rust&page=2）
 #[derive(Deserialize, Default)]
 pub struct SearchQuery {
     pub q: Option<String>,
     pub page: Option<i64>,
 }
 
-// Askama 首頁模板結構（包含分頁與搜尋狀態）
 #[derive(Template)]
 #[template(path = "index.html")]
 pub struct IndexTemplate {

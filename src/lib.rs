@@ -7,13 +7,13 @@ use axum::{
     Router,
 };
 use handlers::message_handler;
-use sqlx::SqlitePool;
+use mongodb::Database;
 
-pub fn create_app(pool: SqlitePool) -> Router {
+pub fn create_app(db: Database) -> Router {
     Router::new()
         .route("/", get(message_handler::show_guestbook))
         .route("/messages", post(message_handler::add_message))
         .route("/messages/{id}/edit", post(message_handler::edit_message))
         .route("/messages/{id}/delete", post(message_handler::delete_message))
-        .with_state(pool)
+        .with_state(db)
 }
